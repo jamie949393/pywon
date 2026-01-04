@@ -1,0 +1,22 @@
+# Simple Calculator
+# Performs basic math operations on two numbers
+
+print Simple Calculator
+print Enter first number:
+input num1
+print Enter second number:
+input num2
+
+# Perform all operations
+add num1 num2 = sum
+sub num1 num2 = diff
+multi num1 num2 = prod
+divi num1 num2 = quot
+
+# Display results
+print
+print Results:
+print $num1 + $num2 = $sum
+print $num1 - $num2 = $diff
+print $num1 * $num2 = $prod
+print $num1 / $num2 = $quot

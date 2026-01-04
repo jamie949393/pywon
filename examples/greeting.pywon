@@ -1,0 +1,24 @@
+# Personal Greeting
+# Gets user information and creates a personalized greeting
+
+print Personal Greeting Generator
+print
+print What is your name?
+input name
+
+print What is your favorite color?
+input color
+
+print How old are you?
+input age
+
+print
+print Nice to meet you, $name!
+print Your favorite color is $color
+print You are $age years old
+
+if $age <18
+print You are young!
+else
+print You are an adult!
+end

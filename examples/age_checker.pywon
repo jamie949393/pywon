@@ -1,0 +1,26 @@
+# Age Checker
+# Determines age category based on input
+
+print Age Category Checker
+print Enter your age:
+input age
+
+if $age <13
+print You are a child
+end
+
+if $age >12
+if $age <20
+print You are a teenager
+end
+end
+
+if $age >19
+if $age <65
+print You are an adult
+end
+end
+
+if $age >64
+print You are a senior
+end

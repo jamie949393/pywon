@@ -1,0 +1,16 @@
+# Countdown Timer
+# Counts down from 10 to 1
+
+print Countdown Timer
+print Starting countdown from 10...
+print
+
+set count 10
+
+loop 10 times
+print $count
+sub count 1 = count
+loop close
+
+print
+print Blast off!

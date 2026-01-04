@@ -1,0 +1,17 @@
+# Multiplication Table
+# Shows the multiplication table for a number
+
+print Multiplication Table Generator
+print Enter a number:
+input num
+
+print
+print Multiplication table for $num:
+print
+
+set i 1
+loop 10 times
+multi num i = result
+print $num x $i = $result
+add i 1 = i
+loop close

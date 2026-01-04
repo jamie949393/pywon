@@ -1,0 +1,21 @@
+# Number Guessing Game
+# Try to guess the secret number!
+
+print Number Guessing Game
+print I am thinking of a number between 1 and 10
+set secret 7
+
+print Enter your guess:
+input guess
+
+if $guess =$secret
+print Correct! You guessed it!
+end
+
+if $guess >$secret
+print Too high! The number was $secret
+end
+
+if $guess <$secret
+print Too low! The number was $secret
+end
