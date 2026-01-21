@@ -1,0 +1,75 @@
+# Simple Falling Block Game
+# Press a/d to move, q to quit
+
+set running 1
+set x 5
+set y 0
+set score 0
+
+while $running =1
+clear
+print === FALLING BLOCK ===
+print Score: $score
+print
+
+# Draw the game (10 rows)
+set row 0
+loop 10 times
+set col 0
+set line 
+loop 10 times
+if $row =$y
+if $col =$x
+set line $line#
+else
+set line $line.
+end
+else
+set line $line.
+end
+add col 1 = col
+loop close
+print $line
+add row 1 = row
+loop close
+
+print
+print Controls: a=left d=right q=quit
+
+# Get key
+key = k
+
+# Move left
+if $k =a
+if $x >0
+sub x 1 = x
+end
+end
+
+# Move right
+if $k =d
+if $x <9
+add x 1 = x
+end
+end
+
+# Quit
+if $k =q
+set running 0
+end
+
+# Move block down
+add y 1 = y
+
+# Reset when hits bottom
+if $y >9
+set y 0
+add score 10 = score
+random 0 9 = x
+end
+
+wait 300
+while close
+
+print
+print Game Over! Final score: $score

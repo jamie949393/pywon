@@ -236,6 +236,68 @@ loop close
 print Blast off!
 ```
 
+### While Loop
+
+```pywon
+set running 1
+set count 0
+
+while $running =1
+add count 1 = count
+print Count: $count
+if $count =5
+set running 0
+end
+while close
+
+print Done!
+```
+
+### Random Numbers
+
+```pywon
+print Rolling dice...
+random 1 6 = dice
+print You rolled: $dice
+```
+
+### Lists (Arrays)
+
+```pywon
+# Create a list with 5 elements
+list scores 5
+
+# Set values
+put scores 0 100
+put scores 1 85
+put scores 2 90
+
+# Get values
+get scores 1 = second
+print Second score: $second
+
+# Get list length
+len scores = size
+print List has $size elements
+```
+
+### Simple Animation
+
+```pywon
+set x 0
+set running 1
+
+while $running =1
+clear
+print Position: $x
+add x 1 = x
+wait 200
+if $x >10
+set running 0
+end
+while close
+```
+
 ### Age Checker
 
 ```pywon
@@ -270,11 +332,22 @@ end
 | `sub` | `sub x y = result` | Subtract two numbers |
 | `multi` | `multi x y = result` | Multiply two numbers |
 | `divi` | `divi x y = result` | Divide two numbers (returns decimal) |
+| `mod` | `mod x y = result` | Modulo (remainder) |
 | `loop` | `loop N times` | Start a loop that repeats N times |
 | `loop close` | `loop close` | End a loop |
+| `while` | `while condition` | Loop while condition is true |
+| `while close` | `while close` | End a while loop |
 | `if` | `if condition` | Start a conditional block |
 | `else` | `else` | Alternative block if condition is false |
 | `end` | `end` | End a conditional block |
+| `clear` | `clear` | Clear the screen |
+| `wait` | `wait 500` | Pause for milliseconds |
+| `random` | `random 1 10 = result` | Random number between min and max |
+| `key` | `key = pressed` | Get key press (non-blocking) |
+| `list` | `list name 10` | Create a list with 10 elements |
+| `get` | `get name 0 = value` | Get element at index |
+| `put` | `put name 0 42` | Set element at index |
+| `len` | `len name = size` | Get list length |
 
 ### Operators
 

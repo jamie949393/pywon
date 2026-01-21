@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # .pywon interpreter
 # Usage: ./pywon script.pywon
 
@@ -12,335 +12,338 @@ if [ ! -f "$1" ]; then
     exit 1
 fi
 
-# Helper function to get value (variable or literal number/string)
+# Read file into array
+mapfile -t lines < "$1"
+total_lines=${#lines[@]}
+
+# Associative array for variables
+declare -A vars
+
+# Helper function to get value (variable or literal)
 get_value() {
-    val="$1"
-    has_dollar=0
+    local val="$1"
     
-    # Check if it starts with $
-    case "$val" in
-        \$*)
-            has_dollar=1
-            val="${val#\$}"
-            ;;
-    esac
+    # Remove $ prefix if present
+    if [[ "$val" == \$* ]]; then
+        val="${val:1}"
+        echo "${vars[$val]}"
+        return
+    fi
     
     # Check if it's a number
-    case "$val" in
-        ''|*[!0-9.-]*)
-            # Not a number
-            if [ $has_dollar -eq 1 ]; then
-                # Has $, so it's definitely a variable
-                eval "echo \"\$$val\""
-            else
-                # No $, check if variable exists
-                eval "test -n \"\${$val+x}\"" 2>/dev/null
-                if [ $? -eq 0 ]; then
-                    # Variable exists, return its value
-                    eval "echo \"\$$val\""
-                else
-                    # Variable doesn't exist, treat as literal string
-                    echo "$val"
-                fi
-            fi
-            ;;
-        *)
-            # It's a number, return as-is
-            echo "$val"
-            ;;
-    esac
+    if [[ "$val" =~ ^-?[0-9]+\.?[0-9]*$ ]]; then
+        echo "$val"
+        return
+    fi
+    
+    # Check if variable exists
+    if [[ -v vars[$val] ]]; then
+        echo "${vars[$val]}"
+    else
+        echo "$val"
+    fi
 }
 
-# Function to check if value is a number
 is_number() {
-    case "$1" in
-        ''|*[!0-9.-]*) return 1 ;;
-        *) return 0 ;;
-    esac
+    [[ "$1" =~ ^-?[0-9]+\.?[0-9]*$ ]]
 }
 
-# Function to evaluate condition
 eval_condition() {
-    condition="$1"
-    # Parse: $var >5 or $var < $other or var =5
+    local condition="$1"
+    local left operator right left_val right_val
+    
     left=$(echo "$condition" | sed 's/[<>=].*//' | sed 's/ *$//')
     operator=$(echo "$condition" | sed 's/.*\([<>=]\).*/\1/')
     right=$(echo "$condition" | sed 's/.*[<>=]//' | sed 's/^ *//')
     
-    # Get actual values
     left_val=$(get_value "$left")
     right_val=$(get_value "$right")
     
-    # Check if both values are numbers
     if is_number "$left_val" && is_number "$right_val"; then
-        # Numeric comparison
         case "$operator" in
-            ">")
-                [ "$left_val" -gt "$right_val" ] 2>/dev/null && return 0 || return 1
-                ;;
-            "<")
-                [ "$left_val" -lt "$right_val" ] 2>/dev/null && return 0 || return 1
-                ;;
-            "=")
-                [ "$left_val" = "$right_val" ] && return 0 || return 1
-                ;;
-            *)
-                return 1
-                ;;
+            ">") (( left_val > right_val )) ;;
+            "<") (( left_val < right_val )) ;;
+            "=") [[ "$left_val" == "$right_val" ]] ;;
+            *) return 1 ;;
         esac
     else
-        # String comparison - only = is allowed
         case "$operator" in
-            "=")
-                [ "$left_val" = "$right_val" ] && return 0 || return 1
-                ;;
-            ">"|"<")
-                echo "Error: Cannot use > or < with strings (comparing '$left_val' and '$right_val')" >&2
-                return 1
-                ;;
-            *)
-                return 1
-                ;;
+            "=") [[ "$left_val" == "$right_val" ]] ;;
+            ">"|"<") echo "Error: Cannot use > or < with strings" >&2; return 1 ;;
+            *) return 1 ;;
         esac
     fi
 }
 
-# Function to execute a single line
-execute_line() {
-    line="$1"
+# Find matching close for a block
+find_close() {
+    local start=$1 open_pat="$2" close_pat="$3"
+    local search=$((start + 1)) depth=0
     
-    # Skip empty lines and comments
-    case "$line" in
-        ""|\#*)
-            return
-            ;;
-    esac
-    
-    # Check command type
-    case "$line" in
-        print*)
-            # Extract everything after "print "
-            text="${line#print }"
-            # Expand variables in the text
-            eval "echo \"$text\""
-            ;;
-        input*)
-            # Extract variable name after "input "
-            varname="${line#input }"
-            varname=$(echo "$varname" | tr -d ' ')
-            # Read input from user (redirect from terminal)
-            read -r user_input </dev/tty 2>/dev/null || read -r user_input
-            # Store in the variable with the specified name
-            eval "$varname='$user_input'"
-            ;;
-        set*)
-            # Extract variable name and value after "set "
-            rest="${line#set }"
-            # Get first word as variable name
-            varname=$(echo "$rest" | awk '{print $1}')
-            # Get everything after first word as value
-            value=$(echo "$rest" | cut -d' ' -f2-)
-            # Expand any variables in the value
-            eval "value=\"$value\""
-            # Store in the variable
-            eval "$varname='$value'"
-            ;;
-        add*)
-            # Parse: add num1 num2 = result
-            rest="${line#add }"
-            # Split by '='
-            left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
-            result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
-            # Get the two operands
-            var1=$(echo "$left" | awk '{print $1}')
-            var2=$(echo "$left" | awk '{print $2}')
-            # Get values (variable or literal)
-            num1=$(get_value "$var1")
-            num2=$(get_value "$var2")
-            # Calculate
-            result=$((num1 + num2))
-            # Store result
-            eval "$result_var='$result'"
-            ;;
-        sub*)
-            # Parse: sub num1 num2 = result
-            rest="${line#sub }"
-            left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
-            result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
-            var1=$(echo "$left" | awk '{print $1}')
-            var2=$(echo "$left" | awk '{print $2}')
-            num1=$(get_value "$var1")
-            num2=$(get_value "$var2")
-            result=$((num1 - num2))
-            eval "$result_var='$result'"
-            ;;
-        multi*)
-            # Parse: multi num1 num2 = result
-            rest="${line#multi }"
-            left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
-            result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
-            var1=$(echo "$left" | awk '{print $1}')
-            var2=$(echo "$left" | awk '{print $2}')
-            num1=$(get_value "$var1")
-            num2=$(get_value "$var2")
-            result=$((num1 * num2))
-            eval "$result_var='$result'"
-            ;;
-        divi*)
-            # Parse: divi num1 num2 = result
-            rest="${line#divi }"
-            left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
-            result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
-            var1=$(echo "$left" | awk '{print $1}')
-            var2=$(echo "$left" | awk '{print $2}')
-            num1=$(get_value "$var1")
-            num2=$(get_value "$var2")
-            # Check for division by zero
-            if [ "$num2" = "0" ]; then
-                result=0
-            else
-                # Use awk for decimal division
-                result=$(awk "BEGIN {printf \"%.2f\", $num1 / $num2}")
-            fi
-            eval "$result_var='$result'"
-            ;;
-    esac
+    while (( search < total_lines )); do
+        local check="${lines[$search]}"
+        # Skip "while close" when looking for nested "while "
+        if [[ "$check" =~ ^$open_pat ]] && [[ "$check" != "$close_pat" ]]; then
+            ((depth++))
+        fi
+        if [[ "$check" == "$close_pat" ]]; then
+            (( depth == 0 )) && { echo $search; return; }
+            ((depth--))
+        fi
+        ((search++))
+    done
+    echo $total_lines
 }
 
-# Read entire file into array-like structure using a temp file
-tmpfile="/tmp/pywon_$$"
-cat "$1" > "$tmpfile"
-
-# Process file
-line_num=0
-total_lines=$(wc -l < "$tmpfile")
-
-while [ $line_num -lt $total_lines ]; do
-    line_num=$((line_num + 1))
-    line=$(sed -n "${line_num}p" "$tmpfile")
+# Find else for an if block
+find_else() {
+    local start=$1 end=$2
+    local search=$((start + 1)) depth=0
     
-    # Check for loop start
-    if echo "$line" | grep -q "^loop "; then
-        # Extract number: "loop 5 times" -> 5
-        loop_count=$(echo "$line" | awk '{print $2}')
+    while (( search < end )); do
+        local check="${lines[$search]}"
+        [[ "$check" =~ ^if\  ]] && ((depth++))
+        [[ "$check" == "end" ]] && ((depth--))
+        if (( depth == 0 )) && [[ "$check" == "else" ]]; then
+            echo $search
+            return
+        fi
+        ((search++))
+    done
+    echo -1
+}
+
+# Execute code from line $1 to line $2
+run_lines() {
+    local run_start=$1 run_end=$2
+    local cur=$run_start
+    
+    while (( cur <= run_end )); do
+        local line="${lines[$cur]}"
         
-        # Find loop body (lines between "loop" and "loop close")
-        loop_start=$((line_num + 1))
-        loop_end=$line_num
+        # Skip empty lines and comments
+        [[ -z "$line" || "$line" == \#* ]] && { ((cur++)); continue; }
         
-        # Find "loop close"
-        search_line=$((line_num + 1))
-        while [ $search_line -le $total_lines ]; do
-            check_line=$(sed -n "${search_line}p" "$tmpfile")
-            if echo "$check_line" | grep -q "^loop close"; then
-                loop_end=$((search_line - 1))
-                break
-            fi
-            search_line=$((search_line + 1))
-        done
-        
-        # Execute loop body loop_count times
-        i=1
-        while [ $i -le $loop_count ]; do
-            body_line=$loop_start
-            while [ $body_line -le $loop_end ]; do
-                body_content=$(sed -n "${body_line}p" "$tmpfile")
-                execute_line "$body_content"
-                body_line=$((body_line + 1))
+        # Handle while loop (but not "while close")
+        if [[ "$line" =~ ^while\  ]] && [[ "$line" != "while close" ]]; then
+            local condition="${line#while }"
+            local close_line=$(find_close $cur "while " "while close")
+            
+            while eval_condition "$condition"; do
+                run_lines $((cur + 1)) $((close_line - 1))
             done
-            i=$((i + 1))
-        done
-        
-        # Skip to after "loop close"
-        line_num=$((search_line))
-        continue
-    fi
-    
-    # Check for if statement
-    if echo "$line" | grep -q "^if "; then
-        # Extract condition: "if $num >5" -> "$num >5"
-        condition="${line#if }"
-        
-        # Evaluate condition
-        if eval_condition "$condition"; then
-            condition_met=1
-        else
-            condition_met=0
+            
+            cur=$close_line
+            ((cur++))
+            continue
         fi
         
-        # Find the if block (until else or end)
-        if_start=$((line_num + 1))
-        if_end=$line_num
-        else_start=0
-        else_end=0
+        # Handle loop N times (but not "loop close")
+        if [[ "$line" =~ ^loop\ [0-9] ]] && [[ "$line" != "loop close" ]]; then
+            local loop_count=$(echo "$line" | awk '{print $2}')
+            local close_line=$(find_close $cur "loop [0-9]" "loop close")
+            
+            for ((i=1; i<=loop_count; i++)); do
+                run_lines $((cur + 1)) $((close_line - 1))
+            done
+            
+            cur=$close_line
+            ((cur++))
+            continue
+        fi
         
-        # Find else or end
-        search_line=$((line_num + 1))
-        depth=0
-        while [ $search_line -le $total_lines ]; do
-            check_line=$(sed -n "${search_line}p" "$tmpfile")
+        # Handle if statement
+        if [[ "$line" =~ ^if\  ]]; then
+            local condition="${line#if }"
+            local end_line=$(find_close $cur "if " "end")
+            local else_line=$(find_else $cur $end_line)
             
-            # Track nested ifs
-            if echo "$check_line" | grep -q "^if "; then
-                depth=$((depth + 1))
-            fi
-            
-            if [ $depth -eq 0 ]; then
-                if echo "$check_line" | grep -q "^else"; then
-                    if_end=$((search_line - 1))
-                    else_start=$((search_line + 1))
-                    search_line=$((search_line + 1))
-                    continue
-                fi
-                
-                if echo "$check_line" | grep -q "^end"; then
-                    if [ $else_start -eq 0 ]; then
-                        if_end=$((search_line - 1))
-                    else
-                        else_end=$((search_line - 1))
-                    fi
-                    break
+            if eval_condition "$condition"; then
+                if (( else_line == -1 )); then
+                    run_lines $((cur + 1)) $((end_line - 1))
+                else
+                    run_lines $((cur + 1)) $((else_line - 1))
                 fi
             else
-                if echo "$check_line" | grep -q "^end"; then
-                    depth=$((depth - 1))
+                if (( else_line != -1 )); then
+                    run_lines $((else_line + 1)) $((end_line - 1))
                 fi
             fi
             
-            search_line=$((search_line + 1))
-        done
-        
-        # Execute appropriate block
-        if [ $condition_met -eq 1 ]; then
-            # Execute if block
-            body_line=$if_start
-            while [ $body_line -le $if_end ]; do
-                body_content=$(sed -n "${body_line}p" "$tmpfile")
-                execute_line "$body_content"
-                body_line=$((body_line + 1))
-            done
-        else
-            # Execute else block if it exists
-            if [ $else_start -ne 0 ]; then
-                body_line=$else_start
-                while [ $body_line -le $else_end ]; do
-                    body_content=$(sed -n "${body_line}p" "$tmpfile")
-                    execute_line "$body_content"
-                    body_line=$((body_line + 1))
-                done
-            fi
+            cur=$((end_line + 1))
+            continue
         fi
         
-        # Skip to after "end"
-        line_num=$((search_line))
-        continue
-    fi
-    
-    # Execute line if not a control structure keyword
-    if ! echo "$line" | grep -qE "^(loop close|else|end)"; then
-        execute_line "$line"
-    fi
-done
+        # Skip control keywords
+        case "$line" in
+            "loop close"|"while close"|"else"|"end")
+                ((cur++))
+                continue
+                ;;
+        esac
+        
+        # Execute simple commands
+        case "$line" in
+            print|print\ *)
+                if [[ "$line" == "print" ]]; then
+                    echo ""
+                else
+                    local text="${line#print }"
+                    # Expand variables
+                    while [[ "$text" =~ \$([a-zA-Z_][a-zA-Z0-9_]*) ]]; do
+                        local vn="${BASH_REMATCH[1]}"
+                        local vv="${vars[$vn]}"
+                        text="${text//\$$vn/$vv}"
+                    done
+                    echo "$text"
+                fi
+                ;;
+            input*)
+                local varname="${line#input }"
+                varname="${varname// /}"
+                read -r vars[$varname] </dev/tty 2>/dev/null || read -r vars[$varname]
+                ;;
+            set*)
+                local rest="${line#set }"
+                local varname=$(echo "$rest" | awk '{print $1}')
+                local value=$(echo "$rest" | cut -d' ' -f2-)
+                # Expand variables in value
+                while [[ "$value" =~ \$([a-zA-Z_][a-zA-Z0-9_]*) ]]; do
+                    local vn="${BASH_REMATCH[1]}"
+                    local vv="${vars[$vn]}"
+                    value="${value//\$$vn/$vv}"
+                done
+                vars[$varname]="$value"
+                ;;
+            add*)
+                local rest="${line#add }"
+                local left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
+                local result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
+                local var1=$(echo "$left" | awk '{print $1}')
+                local var2=$(echo "$left" | awk '{print $2}')
+                local num1=$(get_value "$var1")
+                local num2=$(get_value "$var2")
+                vars[$result_var]=$((num1 + num2))
+                ;;
+            sub*)
+                local rest="${line#sub }"
+                local left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
+                local result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
+                local var1=$(echo "$left" | awk '{print $1}')
+                local var2=$(echo "$left" | awk '{print $2}')
+                local num1=$(get_value "$var1")
+                local num2=$(get_value "$var2")
+                vars[$result_var]=$((num1 - num2))
+                ;;
+            multi*)
+                local rest="${line#multi }"
+                local left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
+                local result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
+                local var1=$(echo "$left" | awk '{print $1}')
+                local var2=$(echo "$left" | awk '{print $2}')
+                local num1=$(get_value "$var1")
+                local num2=$(get_value "$var2")
+                vars[$result_var]=$((num1 * num2))
+                ;;
+            divi*)
+                local rest="${line#divi }"
+                local left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
+                local result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
+                local var1=$(echo "$left" | awk '{print $1}')
+                local var2=$(echo "$left" | awk '{print $2}')
+                local num1=$(get_value "$var1")
+                local num2=$(get_value "$var2")
+                if [[ "$num2" == "0" ]]; then
+                    vars[$result_var]=0
+                else
+                    vars[$result_var]=$(awk "BEGIN {printf \"%.2f\", $num1 / $num2}")
+                fi
+                ;;
+            mod*)
+                local rest="${line#mod }"
+                local left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
+                local result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
+                local var1=$(echo "$left" | awk '{print $1}')
+                local var2=$(echo "$left" | awk '{print $2}')
+                local num1=$(get_value "$var1")
+                local num2=$(get_value "$var2")
+                vars[$result_var]=$((num1 % num2))
+                ;;
+            clear)
+                printf '\033[2J\033[H'
+                ;;
+            wait*)
+                local ms="${line#wait }"
+                ms=$(get_value "$ms")
+                local seconds=$(awk "BEGIN {printf \"%.3f\", $ms / 1000}")
+                sleep "$seconds"
+                ;;
+            random*)
+                local rest="${line#random }"
+                local left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
+                local result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
+                local min=$(echo "$left" | awk '{print $1}')
+                local max=$(echo "$left" | awk '{print $2}')
+                min=$(get_value "$min")
+                max=$(get_value "$max")
+                local range=$((max - min + 1))
+                vars[$result_var]=$((min + (RANDOM % range)))
+                ;;
+            key*)
+                local result_var="${line#key = }"
+                result_var="${result_var// /}"
+                local key_pressed=""
+                if command -v stty >/dev/null 2>&1; then
+                    local old_settings=$(stty -g </dev/tty 2>/dev/null)
+                    stty -icanon -echo min 0 time 1 </dev/tty 2>/dev/null
+                    key_pressed=$(dd bs=1 count=1 </dev/tty 2>/dev/null)
+                    stty "$old_settings" </dev/tty 2>/dev/null
+                fi
+                vars[$result_var]="$key_pressed"
+                ;;
+            list*)
+                local rest="${line#list }"
+                local listname=$(echo "$rest" | awk '{print $1}')
+                local size=$(echo "$rest" | awk '{print $2}')
+                local default=$(echo "$rest" | awk '{print $3}')
+                size=$(get_value "$size")
+                [[ -z "$default" ]] && default=0
+                default=$(get_value "$default")
+                vars["${listname}_size"]=$size
+                for ((i=0; i<size; i++)); do
+                    vars["${listname}_${i}"]=$default
+                done
+                ;;
+            get*)
+                local rest="${line#get }"
+                local left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
+                local result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
+                local listname=$(echo "$left" | awk '{print $1}')
+                local index=$(echo "$left" | awk '{print $2}')
+                index=$(get_value "$index")
+                vars[$result_var]="${vars[${listname}_${index}]}"
+                ;;
+            put*)
+                local rest="${line#put }"
+                local listname=$(echo "$rest" | awk '{print $1}')
+                local index=$(echo "$rest" | awk '{print $2}')
+                local value=$(echo "$rest" | awk '{print $3}')
+                index=$(get_value "$index")
+                value=$(get_value "$value")
+                vars["${listname}_${index}"]="$value"
+                ;;
+            len*)
+                local rest="${line#len }"
+                local left=$(echo "$rest" | cut -d'=' -f1 | sed 's/ *$//')
+                local result_var=$(echo "$rest" | cut -d'=' -f2 | sed 's/^ *//')
+                local listname=$(echo "$left" | awk '{print $1}')
+                vars[$result_var]="${vars[${listname}_size]}"
+                ;;
+        esac
+        
+        ((cur++))
+    done
+}
 
-# Cleanup
-rm -f "$tmpfile"
+# Run the entire program
+run_lines 0 $((total_lines - 1))
